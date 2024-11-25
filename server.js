@@ -3,6 +3,7 @@ const path = require('path');
 const multer = require('multer');
 const fs = require('fs');
 const MongoClient = require('mongodb').MongoClient;
+const cors = require('cors');
 
 const app = express();
 const port = 3000;
@@ -11,6 +12,35 @@ const port = 3000;
 const mongoUrl = 'mongodb+srv://et523:zzclDLjLXs7Cvsan@cluster0.dpz3g.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 const dbName = 'file-share';
 let db;
+
+app.use(cors());   
+
+// Connect to MongoDB and start the server once the connection is established
+MongoClient.connect(mongoUrl, { useUnifiedTopology: true })
+    .then(client => {
+        db = client.db(dbName);
+        console.log('Connected to MongoDB');
+
+        // Check if the 'posts' collection exists, and if not, create it by inserting a dummy document
+        const collection = db.collection('posts');
+        collection.countDocuments({}, (err, count) => {
+            if (err) {
+                console.error('Error checking collection:', err);
+            } else if (count === 0) {
+                // Insert a dummy post to create the collection
+                collection.insertOne({ description: 'Initial dummy post', image: 'dummy.jpg' })
+                    .then(() => console.log('Created posts collection with dummy post.'));
+            }
+        });
+
+        // Start the server only after the DB connection is successful
+        app.listen(port, () => {
+            console.log(`Server running at http://localhost:${port}`);
+        });
+    })
+    .catch(err => {
+        console.error('Failed to connect to MongoDB:', err);
+    });
 
 // Ensure the 'uploads' folder exists
 const uploadDir = path.join(__dirname, '/', 'uploads');
@@ -77,45 +107,27 @@ app.get('/images', (req, res) => {
     res.json({ success: true, images });
 });
 
-// Handle GET request to fetch posts
-app.get('/posts', (req, res) => {
+// Server-side route to fetch descriptions
+app.get('/descriptions', async (req, res) => {
+    console.log("Received request for /descriptions");
+
     if (!db) {
         return res.status(500).json({ success: false, message: 'Database connection not established.' });
     }
 
     const collection = db.collection('posts');
-    collection.find().toArray((err, posts) => {
-        if (err) {
-            console.error('Failed to fetch posts:', err);
-            return res.status(500).json({ success: false, message: 'Failed to fetch posts.' });
-        }
-        res.json({ success: true, posts });
-    });
+
+    try {
+        // Using await to handle the asynchronous operation
+        const documents = await collection.find().toArray();
+
+        const descriptions = documents.map(doc => doc.description);
+        console.log('Descriptions:', descriptions);
+        // You can then send the documents in the response
+        res.json({ success: true, posts: descriptions });
+    } catch (err) {
+        console.error('Error fetching posts:', err);
+        return res.status(500).json({ success: false, message: 'Failed to fetch posts.' });
+    }
 });
 
-// Connect to MongoDB and start the server once the connection is established
-MongoClient.connect(mongoUrl, { useUnifiedTopology: true })
-    .then(client => {
-        db = client.db(dbName);
-        console.log('Connected to MongoDB');
-
-        // Check if the 'posts' collection exists, and if not, create it by inserting a dummy document
-        const collection = db.collection('posts');
-        collection.countDocuments({}, (err, count) => {
-            if (err) {
-                console.error('Error checking collection:', err);
-            } else if (count === 0) {
-                // Insert a dummy post to create the collection
-                collection.insertOne({ description: 'Initial dummy post', image: 'dummy.jpg' })
-                    .then(() => console.log('Created posts collection with dummy post.'));
-            }
-        });
-
-        // Start the server only after the DB connection is successful
-        app.listen(port, () => {
-            console.log(`Server running at http://localhost:${port}`);
-        });
-    })
-    .catch(err => {
-        console.error('Failed to connect to MongoDB:', err);
-    });
